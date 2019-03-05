@@ -22,6 +22,7 @@ from __future__ import print_function
 import matplotlib
 import numpy as np
 import tensorflow as tf
+import os, glob
 #import Tkinter    # pylint: disable=unused-import
 
 matplotlib.use('Agg')
@@ -205,10 +206,27 @@ def train():
     masks_parameters = zip(starts, ends.tolist())
     latest_epoch_scorer = scores.GridScorer(20, data_reader.get_coord_range(),
                                                                                     masks_parameters)
+
     saver = tf.train.Saver()
-    saver_hook = tf.train.CheckpointSaverHook(checkpoint_dir='../data/checkpoint', save_steps=5)
+    start_epoch = 0
+    list_of_files = glob.glob('../data/saved_sessions/*')
+    print(list_of_files)
+
+
+
+
+
+
     with tf.train.SingularMonitoredSession() as sess:
-        for epoch in range(FLAGS.training_epochs):
+        if list_of_files:
+            last_ckpt = tf.train.latest_checkpoint("../data/saved_sessions/")
+            tf.logging.info('Attempting checkpoint restore: {}'.format(last_ckpt))
+            start_epoch =  int(last_ckpt.split('.')[2].split('_')[-1])
+            saver.restore(sess, last_ckpt)
+        else:
+            tf.logging.info('no checkpoint found')
+
+        for epoch in range(start_epoch, FLAGS.training_epochs):
             loss_acc = list()
             for _ in range(FLAGS.training_steps_per_epoch):
                 res = sess.run({'train_op': train_op, 'total_loss': train_loss})
@@ -235,7 +253,7 @@ def train():
                                         latest_epoch_scorer, res['pos_xy'], res['bottleneck'],
                                         FLAGS.saver_results_directory, filename)
 
-                save_path = saver.save(sess.raw_session(), "../data/saved_sessions/model_epoch_{}.ckpt".format(epoch))
+                save_path = saver.save(sess.raw_session(), "../data/saved_sessions/model_epoch_{}.ckpt".format(epoch), global_step=epoch)
                 print("Model saved in path: %s" % save_path)
 
 

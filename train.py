@@ -34,6 +34,7 @@ import utils    # pylint: disable=g-bad-import-order
 
 xrange=range
 
+
 # Task config
 tf.flags.DEFINE_string('task_dataset_info', 'square_room',
                                              'Name of the room in which the experiment is performed.')
@@ -119,6 +120,7 @@ def train():
     data_reader = dataset_reader.DataReader(
             FLAGS.task_dataset_info, root=FLAGS.task_root, num_threads=4)
     train_traj = data_reader.read(batch_size=FLAGS.training_minibatch_size)
+    print(train_traj)
 
     # Create the ensembles that provide targets during training
     place_cell_ensembles = utils.get_place_cell_ensembles(
@@ -172,7 +174,8 @@ def train():
     # Estimate future encoding of place and hd ensembles inputing egocentric vels
     outputs, _ = rnn(initial_conds, inputs, training=True)
     ensembles_logits, bottleneck, lstm_output = outputs
-
+    print("Bottleneck", bottleneck)
+    print("lstm_output", lstm_output)
     # Training loss
     pc_loss = tf.nn.softmax_cross_entropy_with_logits_v2(
             labels=ensembles_targets[0], logits=ensembles_logits[0], name='pc_loss')
@@ -214,7 +217,7 @@ def train():
 
 
 
-
+    print("TARGETPOS", target_pos)
 
 
     with tf.train.SingularMonitoredSession() as sess:
@@ -238,11 +241,15 @@ def train():
                 res = dict()
                 for _ in xrange(FLAGS.training_evaluation_minibatch_size //
                                                 FLAGS.training_minibatch_size):
+
+
                     mb_res = sess.run({
                             'bottleneck': bottleneck,
                             'lstm': lstm_output,
-                            'pos_xy': target_pos
+                            'pos_xy': target_pos,
+
                     })
+                    print(mb_res['bottleneck'].mean())
                     res = utils.concat_dict(res, mb_res)
 
                 # Store at the end of validation
@@ -258,7 +265,7 @@ def train():
 
 
 def main(unused_argv):
-    tf.logging.set_verbosity(3)    # Print INFO log messages.
+
     train()
 
 if __name__ == '__main__':

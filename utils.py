@@ -178,11 +178,12 @@ def get_scores_and_plot(scorer,
           title=title,
           cmap=cm)
   # Save
-  if not os.path.exists(directory):
-    os.makedirs(directory)
-  with PdfPages(os.path.join(directory, filename), "w") as f:
-    plt.savefig(f, format="pdf")
-  plt.close(fig)
+  if plot_graphs:
+      if not os.path.exists(directory):
+        os.makedirs(directory)
+      with PdfPages(os.path.join(directory, filename), "w") as f:
+        plt.savefig(f, format="pdf")
+      plt.close(fig)
   return (np.asarray(score_60), np.asarray(score_90),
           np.asarray(map(np.mean, max_60_mask)),
           np.asarray(map(np.mean, max_90_mask)))

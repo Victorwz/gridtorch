@@ -41,6 +41,9 @@ tf.flags.DEFINE_string('task_dataset_info', 'square_room',
 tf.flags.DEFINE_string('task_root',
                                              None,
                                              'Dataset path.')
+
+tf.flags.DEFINE_string('exp_name', None, 'name of the experiment')
+
 tf.flags.DEFINE_float('task_env_size', 2.2,
                                             'Environment size (meters).')
 tf.flags.DEFINE_list('task_n_pc', [256],
@@ -76,7 +79,7 @@ tf.flags.DEFINE_float('model_init_weight_disp', 0.0,
                                             'Initial weight displacement.')
 
 # Training config
-tf.flags.DEFINE_integer('training_epochs', 100, 'Number of training epochs.')
+tf.flags.DEFINE_integer('training_epochs', 1000, 'Number of training epochs.')
 tf.flags.DEFINE_integer('training_steps_per_epoch', 1000,
                                                 'Number of optimization steps per epoch.')
 tf.flags.DEFINE_integer('training_minibatch_size', 10,
@@ -108,6 +111,7 @@ tf.flags.DEFINE_integer('saver_eval_time', 10,
 # Require flags
 tf.flags.mark_flag_as_required('task_root')
 tf.flags.mark_flag_as_required('saver_results_directory')
+tf.flags.mark_flag_as_required('exp_name')
 FLAGS = tf.flags.FLAGS
 
 
@@ -210,9 +214,13 @@ def train():
     latest_epoch_scorer = scores.GridScorer(20, data_reader.get_coord_range(),
                                                                                     masks_parameters)
 
+
+
+
+    saved_sess_loc = 'aux_experiments/' + FLAGS.exp_name + "/saved_sessions/"
     saver = tf.train.Saver()
     start_epoch = 0
-    list_of_files = glob.glob('../data/saved_sessions/*')
+    list_of_files = glob.glob(saved_sess_loc + '*')
     print(list_of_files)
 
 
@@ -249,7 +257,6 @@ def train():
                             'pos_xy': target_pos,
 
                     })
-                    print(mb_res['bottleneck'].mean())
                     res = utils.concat_dict(res, mb_res)
 
                 # Store at the end of validation
@@ -258,14 +265,14 @@ def train():
                         'btln_60_separation'], grid_scores[
                                 'btln_90_separation'] = utils.get_scores_and_plot(
                                         latest_epoch_scorer, res['pos_xy'], res['bottleneck'],
-                                        FLAGS.saver_results_directory, filename)
+                                        'aux_experiments/' + FLAGS.exp_name + '/' + FLAGS.saver_results_directory, filename)
 
-                save_path = saver.save(sess.raw_session(), "../data/saved_sessions/model_epoch_{}.ckpt".format(epoch), global_step=epoch)
+                save_path = saver.save(sess.raw_session(), saved_sess_loc + "model_epoch_{}.ckpt".format(epoch), global_step=epoch)
                 print("Model saved in path: %s" % save_path)
 
 
 def main(unused_argv):
-
+    tf.logging.set_verbosity(3)  # Print INFO log messages.
     train()
 
 if __name__ == '__main__':

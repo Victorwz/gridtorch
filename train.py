@@ -230,9 +230,10 @@ def train():
 
     with tf.train.SingularMonitoredSession() as sess:
         if list_of_files:
-            last_ckpt = tf.train.latest_checkpoint("../data/saved_sessions/")
+            last_ckpt = tf.train.latest_checkpoint(saved_sess_loc)
+            print(last_ckpt)
             tf.logging.info('Attempting checkpoint restore: {}'.format(last_ckpt))
-            start_epoch =  int(last_ckpt.split('.')[2].split('_')[-1])
+            start_epoch =  int(last_ckpt.split('.')[1].split('-')[-1])
             saver.restore(sess, last_ckpt)
         else:
             tf.logging.info('no checkpoint found')

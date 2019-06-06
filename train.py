@@ -29,6 +29,7 @@ matplotlib.use('Agg')
 
 import dataset_reader    # pylint: disable=g-bad-import-order, g-import-not-at-top
 import model    # pylint: disable=g-bad-import-order
+import model_gru    # pylint: disable=g-bad-import-order
 import scores    # pylint: disable=g-bad-import-order
 import utils    # pylint: disable=g-bad-import-order
 
@@ -41,6 +42,11 @@ tf.flags.DEFINE_string('task_dataset_info', 'square_room',
 tf.flags.DEFINE_string('task_root',
                                              None,
                                              'Dataset path.')
+
+tf.flags.DEFINE_bool('use_gru',
+                                             False,
+                                             'Dataset path.')
+
 
 tf.flags.DEFINE_string('exp_name', None, 'name of the experiment')
 
@@ -122,9 +128,9 @@ def train():
 
     # Create the motion models for training and evaluation
     data_reader = dataset_reader.DataReader(
-            FLAGS.task_dataset_info, root=FLAGS.task_root, num_threads=4)
+            FLAGS.task_dataset_info, root=FLAGS.task_root, num_threads=8)
     train_traj = data_reader.read(batch_size=FLAGS.training_minibatch_size)
-    print(train_traj)
+    print("TRAIN_TRAJ", train_traj)
 
     # Create the ensembles that provide targets during training
     place_cell_ensembles = utils.get_place_cell_ensembles(
@@ -144,15 +150,26 @@ def train():
     target_ensembles = place_cell_ensembles + head_direction_ensembles
 
     # Model creation
-    rnn_core = model.GridCellsRNNCell(
-            target_ensembles=target_ensembles,
-            nh_lstm=FLAGS.model_nh_lstm,
-            nh_bottleneck=FLAGS.model_nh_bottleneck,
-            dropoutrates_bottleneck=np.array(FLAGS.model_dropout_rates),
-            bottleneck_weight_decay=FLAGS.model_weight_decay,
-            bottleneck_has_bias=FLAGS.model_bottleneck_has_bias,
-            init_weight_disp=FLAGS.model_init_weight_disp)
-    rnn = model.GridCellsRNN(rnn_core, FLAGS.model_nh_lstm)
+    if not FLAGS.use_gru:
+        rnn_core = model.GridCellsRNNCell(
+                target_ensembles=target_ensembles,
+                nh_lstm=FLAGS.model_nh_lstm,
+                nh_bottleneck=FLAGS.model_nh_bottleneck,
+                dropoutrates_bottleneck=np.array(FLAGS.model_dropout_rates),
+                bottleneck_weight_decay=FLAGS.model_weight_decay,
+                bottleneck_has_bias=FLAGS.model_bottleneck_has_bias,
+                init_weight_disp=FLAGS.model_init_weight_disp)
+        rnn = model.GridCellsRNN(rnn_core, FLAGS.model_nh_lstm)
+    else:
+        rnn_core = model_gru.GridCellsRNNCell(
+                target_ensembles=target_ensembles,
+                nh_rnn=FLAGS.model_nh_lstm,
+                nh_bottleneck=FLAGS.model_nh_bottleneck,
+                dropoutrates_bottleneck=np.array(FLAGS.model_dropout_rates),
+                bottleneck_weight_decay=FLAGS.model_weight_decay,
+                bottleneck_has_bias=FLAGS.model_bottleneck_has_bias,
+                init_weight_disp=FLAGS.model_init_weight_disp)
+        rnn = model_gru.GridCellsRNN(rnn_core, FLAGS.model_nh_lstm)
 
     # Get a trajectory batch
     input_tensors = []
@@ -164,7 +181,7 @@ def train():
         input_tensors = [ego_vel + vel_noise] + input_tensors
     # Concatenate all inputs
     inputs = tf.concat(input_tensors, axis=2)
-
+    print("INPUTS", inputs)
     # Replace euclidean positions and angles by encoding of place and hd ensembles
     # Note that the initial_conds will be zeros if the ensembles were configured
     # to provide that type of initialization
@@ -174,12 +191,10 @@ def train():
     # Encode targets as well
     ensembles_targets = utils.encode_targets(
             target_pos, target_hd, place_cell_ensembles, head_direction_ensembles)
-
+    print("TARGETS", initial_conds, ensembles_targets)
     # Estimate future encoding of place and hd ensembles inputing egocentric vels
     outputs, _ = rnn(initial_conds, inputs, training=True)
     ensembles_logits, bottleneck, lstm_output = outputs
-    print("Bottleneck", bottleneck)
-    print("lstm_output", lstm_output)
     # Training loss
     pc_loss = tf.nn.softmax_cross_entropy_with_logits_v2(
             labels=ensembles_targets[0], logits=ensembles_logits[0], name='pc_loss')
@@ -221,13 +236,11 @@ def train():
     saver = tf.train.Saver()
     start_epoch = 0
     list_of_files = glob.glob(saved_sess_loc + '*')
-    print(list_of_files)
 
 
 
-    print("TARGETPOS", target_pos)
 
-
+    print(bottleneck)
     with tf.train.SingularMonitoredSession() as sess:
         if list_of_files:
             last_ckpt = tf.train.latest_checkpoint(saved_sess_loc)

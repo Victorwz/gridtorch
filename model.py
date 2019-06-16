@@ -85,8 +85,10 @@ class GridCellsRNNCell(snt.RNNCore):
     conc_inputs = tf.concat(inputs, axis=1, name="conc_inputs")
     # Embedding layer
     lstm_inputs = conc_inputs
+    print("LSTM INPUT", lstm_inputs)
     # LSTM
     lstm_output, next_state = self._lstm(lstm_inputs, prev_state)
+    print("LSTM OUTPUT", lstm_output)
     # Bottleneck
     bottleneck = snt.Linear(self._nh_bottleneck,
                             use_bias=self._bottleneck_has_bias,
@@ -153,6 +155,7 @@ class GridCellsRNN(snt.AbstractModule):
 
     init_lstm_state = snt.Linear(self._nh_lstm, name="state_init")(concat_init)
     init_lstm_cell = snt.Linear(self._nh_lstm, name="cell_init")(concat_init)
+    print("EMBEDDINGS", (init_lstm_state, init_lstm_cell))
     self._core.training = training
 
     # Run LSTM
@@ -161,6 +164,8 @@ class GridCellsRNN(snt.AbstractModule):
                                                 time_major=False,
                                                 initial_state=(init_lstm_state,
                                                                init_lstm_cell))
+    print("OUTPUT_SEQ", output_seq)
+
     ens_targets = output_seq[:-2]
     bottleneck = output_seq[-2]
     lstm_output = output_seq[-1]

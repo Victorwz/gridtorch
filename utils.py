@@ -14,7 +14,6 @@
 # ==============================================================================
 
 """Helper functions for creating the training graph and plotting.
-
 """
 
 from __future__ import absolute_import
@@ -29,7 +28,6 @@ import tensorflow as tf
 
 import ensembles  # pylint: disable=g-bad-import-order
 
-xrange=range
 
 np.seterr(invalid="ignore")
 
@@ -113,7 +111,7 @@ def concat_dict(acc, new_data):
     else:
       return np.asarray([kk])
 
-  for k, v in new_data.items():
+  for k, v in new_data.iteritems():
     if isinstance(v, dict):
       if k in acc:
         acc[k] = concat_dict(acc[k], v)
@@ -178,12 +176,11 @@ def get_scores_and_plot(scorer,
           title=title,
           cmap=cm)
   # Save
-  if plot_graphs:
-      if not os.path.exists(directory):
-        os.makedirs(directory)
-      with PdfPages(os.path.join(directory, filename), "w") as f:
-        plt.savefig(f, format="pdf")
-      plt.close(fig)
+  if not os.path.exists(directory):
+    os.makedirs(directory)
+  with PdfPages(os.path.join(directory, filename), "w") as f:
+    plt.savefig(f, format="pdf")
+  plt.close(fig)
   return (np.asarray(score_60), np.asarray(score_90),
           np.asarray(map(np.mean, max_60_mask)),
           np.asarray(map(np.mean, max_90_mask)))

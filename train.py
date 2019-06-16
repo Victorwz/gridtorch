@@ -238,9 +238,6 @@ def train():
     list_of_files = glob.glob(saved_sess_loc + '*')
 
 
-
-
-    print(bottleneck)
     with tf.train.SingularMonitoredSession() as sess:
         if list_of_files:
             last_ckpt = tf.train.latest_checkpoint(saved_sess_loc)

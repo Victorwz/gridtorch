@@ -1,28 +1,8 @@
-# Copyright 2018 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
-"""Supervised training for the Grid cell network.
-
--------------
-
-Adapted for pytorch, Lucas Pompe, 2019
-"""
 import numpy as np
 import utils
 
 import model_snu as model
+import model_lstm as model_lstm
 import ensembles
 from dataloading import Dataset
 from model_utils import get_latest_model_file, get_model_epoch
@@ -31,23 +11,21 @@ import torch
 from torch.utils import data
 from torch import nn
 
-from rate_coding import PadCoder
-
 N_EPOCHS = 1000
-STEPS_PER_EPOCH = 100
+STEPS_PER_EPOCH = 150
 ENV_SIZE = 2.2
-BATCH_SIZE = 100
-GRAD_CLIPPING = 1e-5
+BATCH_SIZE = 200
+GRAD_CLIPPING = 0.01
 SEED = 9101
 N_PC = [256]
 N_HDC = [12]
 BOTTLENECK_DROPOUT = 0.5
 WEIGHT_DECAY = 1e-5
-LR = 1e-5
+LR = 0.01
 MOMENTUM = 0.9
 TIME = 50
 PAUSE_TIME = None
-SAVE_LOC = 'experiments/'
+SAVE_LOC = 'experiments/snu_r/'
 
 
 torch.manual_seed(SEED)
@@ -99,7 +77,7 @@ target_ensembles = place_cell_ensembles + head_direction_ensembles
 model = model.GridTorch(target_ensembles, (BATCH_SIZE, 100, 3)).cuda()
 params = model.parameters()
 
-
+model_lstm = model_lstm.GridTorch(target_ensembles, (BATCH_SIZE, 100, 3), tf_weights_loc='weights/').cuda()
 
 
 
@@ -119,25 +97,28 @@ if saved_model_file:
 
 
 #loss ops:
-logsoftmax = nn.LogSoftmax(dim=-1)
+logsoftmax = nn.MSELoss()
 def cross_entropy(pred, soft_targets):
-    return torch.sum(- soft_targets * logsoftmax(pred), -1)
+    a = torch.sigmoid(pred)
+    b = torch.sigmoid(soft_targets)
+    return logsoftmax(a, b)
 
 #Optimisation opts
-optimiser = torch.optim.RMSprop(params,
+optimiser = torch.optim.Adam(params,
                                     lr=LR,
-                                    momentum=MOMENTUM,
-                                    alpha=0.9,
-                                    eps=1e-10)
+                                    #momentum=MOMENTUM,
+                                    #alpha=0.9,
+                                    #eps=1e-10
+                                    )
 
 
 to_cuda = lambda x:x.cuda()
 
-def encode_inputs(X, y, place_cell_ensembles, head_direction_ensembles, cuda=True, coder=None):
+def encode_inputs(X, y, place_cell_ensembles, head_direction_ensembles, cuda=True):
     init_pos , init_hd, ego_vel = X
     target_pos, target_hd = y
 
-
+    inputs = ego_vel.transpose(1,0)
     initial_conds = utils.encode_initial_conditions(init_pos ,
                                                     init_hd,
                                                     place_cell_ensembles,
@@ -147,7 +128,7 @@ def encode_inputs(X, y, place_cell_ensembles, head_direction_ensembles, cuda=Tru
                                             target_hd,
                                             place_cell_ensembles,
                                             head_direction_ensembles)
-    inputs = ego_vel
+
     if cuda:
 
         init_pos = init_pos.cuda()
@@ -157,15 +138,9 @@ def encode_inputs(X, y, place_cell_ensembles, head_direction_ensembles, cuda=Tru
         target_hd = target_hd.cuda()
         initial_conds = tuple(map(to_cuda, initial_conds))
 
-    if coder:
-        inputs = coder(inputs, value=torch.Tensor([0., 1., 0.]))
-        target_pos = coder(target_pos, target=True)
-        target_hd = coder(target_hd, target=True)
-
-    inputs = inputs.transpose(1,0)
     return init_pos, init_hd, inputs, target_pos, target_hd, initial_conds, ensembles_targets
 
-def decode_outputs(outs, ensembles_targets, cuda=True, coder=None):
+def decode_outputs(outs, ensembles_targets, cuda=True):
         if cuda:
             pc_targets = ensembles_targets[0].cuda()
             hd_targets = ensembles_targets[1].cuda()
@@ -181,9 +156,6 @@ def decode_outputs(outs, ensembles_targets, cuda=True, coder=None):
         logits_pc = logits_pc.view(-1, N_PC[0])
         logits_hd = logits_hd.view(-1, N_HDC[0])
 
-        if coder:
-            pc_targets, hd_targets = coder(pc_targets, target=True), coder(hd_targets, target=True)
-
         pc_targets = pc_targets.contiguous().view(-1, N_PC[0])
         hd_targets = hd_targets.contiguous().view(-1, N_HDC[0])
 
@@ -196,18 +168,16 @@ def get_loss(logits_pc, logits_hd, pc_targets, hd_targets, bottleneck_acts):
     return torch.mean(pc_loss + hd_loss)
 
 
-coder = PadCoder(3)
-
+def eval_loop():
+    pass
 
 if __name__ == '__main__':
     torch.save(target_ensembles, SAVE_LOC + 'target_ensembles.pt')
     torch.save(model.state_dict(), SAVE_LOC + 'model_epoch_0.pt')
-
-
     for e in range(start_epoch, N_EPOCHS):
 
 
-        model.train()
+        model.eval()
         step = 0
         losses = []
         for X, y in data_generator:
@@ -220,16 +190,18 @@ if __name__ == '__main__':
             target_pos,
             target_hd,
             initial_conds,
-            ensembles_targets) = encode_inputs(X, y, place_cell_ensembles, head_direction_ensembles, coder=coder)
-
+            ensembles_targets) = encode_inputs(X, y, place_cell_ensembles, head_direction_ensembles)
 
 
             outs  = model.forward(inputs, initial_conds)
+            outs_lstm  = model_lstm.forward(inputs, initial_conds)
 
-            bottleneck_acts, logits_pc, logits_hd, pc_targets, hd_targets = decode_outputs(outs, ensembles_targets, coder=coder)
-            loss = get_loss(logits_pc, logits_hd, pc_targets, hd_targets, bottleneck_acts)
+            bottleneck_acts, logits_pc, logits_hd, pc_targets, hd_targets = decode_outputs(outs, ensembles_targets)
+            lstm_acts, _, _, _, _ = decode_outputs(outs_lstm, ensembles_targets)
 
-            loss += model.l2_loss * WEIGHT_DECAY
+
+
+            loss = cross_entropy(lstm_acts, bottleneck_acts)
             loss.backward()
             torch.nn.utils.clip_grad_value_(params, GRAD_CLIPPING)
             optimiser.step()
@@ -239,32 +211,3 @@ if __name__ == '__main__':
 
             step += 1
         print("EPOCH", e, 'LOSS :', torch.mean(torch.Tensor(losses)))
-        #evaluation routine
-        if e % 10 == 0 and e > 0:
-            state_dict = model.state_dict()
-            for k, v in state_dict.items():
-                state_dict[k] = v.cpu()
-            torch.save(state_dict, SAVE_LOC + 'model_epoch_{}.pt'.format(e))
-            with torch.no_grad():
-                model.eval()
-                for data in test_generator:
-                    test_X, test_y = data
-
-                    (init_pos,
-                    init_hd,
-                    inputs,
-                    target_pos,
-                    target_hd,
-                    initial_conds,
-                    ensembles_targets) = encode_inputs(test_X, test_y, place_cell_ensembles, head_direction_ensembles, coder=coder)
-
-
-                    outs  = model.forward(inputs, initial_conds)
-
-                    bottleneck_acts, logits_pc, logits_hd, pc_targets, hd_targets = decode_outputs(outs, ensembles_targets, coder=coder)
-
-                    loss = get_loss(logits_pc, logits_hd, pc_targets, hd_targets, bottleneck_acts)
-
-                    print("LOSS:", loss)
-
-                    break

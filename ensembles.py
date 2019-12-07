@@ -17,6 +17,10 @@
 
 These classes provide the targets for the training of grid-cell networks.
 
+
+-----
+
+Adapted for PyTorch by Lucas Pompe, 2019
 """
 
 from __future__ import absolute_import
@@ -24,24 +28,31 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import tensorflow as tf
+import torch
+
+
+def one_hot(batch,depth):
+    emb = nn.Embedding(depth, depth)
+    emb.weight.data = torch.eye(depth)
+    return emb(batch)
 
 
 def one_hot_max(x, axis=-1):
   """Compute one-hot vectors setting to one the index with the maximum value."""
-  return tf.one_hot(tf.argmax(x, axis=axis),
-                    depth=x.get_shape()[-1],
-                    dtype=x.dtype)
+  print(x.shape)
+  _, idx = torch.max(x, axis)
+  depth = x.shape[-1]
+  return one_hot(idx, depth)
 
 
 def softmax(x, axis=-1):
   """Compute softmax values for each sets of scores in x."""
-  return tf.nn.softmax(x, dim=axis)
+  return torch.nn.functional.softmax(x, dim=axis)
 
 
 def softmax_sample(x):
   """Sample the categorical distribution from logits and sample it."""
-  dist = tf.contrib.distributions.OneHotCategorical(logits=x, dtype=tf.float32)
+  dist = torch.distributions.OneHotCategorical(logits=x)
   return dist.sample()
 
 
@@ -70,7 +81,7 @@ class CellEnsemble(object):
     """Type of target."""
 
     if self.soft_targets == "normalized":
-      targets = tf.exp(self.unnor_logpdf(x))
+      targets = torch.exp(self.unnor_logpdf(x))
     elif self.soft_targets == "softmax":
       lp = self.log_posterior(x)
       targets = softmax(lp)
@@ -86,7 +97,7 @@ class CellEnsemble(object):
     """Type of initialisation."""
 
     if self.soft_init == "normalized":
-      init = tf.exp(self.unnor_logpdf(x))
+      init = torch.exp(self.unnor_logpdf(x))
     elif self.soft_init == "softmax":
       lp = self.log_posterior(x)
       init = softmax(lp)
@@ -97,29 +108,28 @@ class CellEnsemble(object):
       lp = self.log_posterior(x)
       init = one_hot_max(lp)
     elif self.soft_init == "zeros":
-      init = tf.zeros_like(self.unnor_logpdf(x))
+      init = torch.zeros_like(self.unnor_logpdf(x))
+
+      print(init)
     return init
 
   def loss(self, predictions, targets):
     """Loss."""
-
+    crit = torch.nn.BCEWithLogitsLoss()
     if self.soft_targets == "normalized":
       smoothing = 1e-2
-      loss = tf.nn.sigmoid_cross_entropy_with_logits(
-          labels=(1. - smoothing) * targets + smoothing * 0.5,
-          logits=predictions,
-          name="ensemble_loss")
-      loss = tf.reduce_mean(loss, axis=-1)
+      loss = crit((1. - smoothing) * targets + smoothing * 0.5,
+            predictions)
+      loss = torch.mean(loss, dim=-1)
     else:
-      loss = tf.nn.softmax_cross_entropy_with_logits(
-          labels=targets,
-          logits=predictions,
-          name="ensemble_loss")
+      loss = crit(
+          targets,
+          predictions)
     return loss
 
   def log_posterior(self, x):
     logp = self.unnor_logpdf(x)
-    log_posteriors = logp - tf.reduce_logsumexp(logp, axis=2, keep_dims=True)
+    log_posteriors = logp - torch.logsumexp(logp, dim=2, keepdim=True)
     return log_posteriors
 
 
@@ -130,14 +140,16 @@ class PlaceCellEnsemble(CellEnsemble):
                soft_targets=None, soft_init=None):
     super(PlaceCellEnsemble, self).__init__(n_cells, soft_targets, soft_init)
     # Create a random MoG with fixed cov over the position (Nx2)
-    rs = np.random.RandomState(seed)
-    self.means = rs.uniform(pos_min, pos_max, size=(self.n_cells, 2))
-    self.variances = np.ones_like(self.means) * stdev**2
+    rs = torch.manual_seed(seed)
+    uni = torch.distributions.Uniform(pos_min, pos_max)
+
+    self.means = uni.sample((self.n_cells, 2))
+    self.variances = (torch.ones_like(self.means) * stdev**2)
 
   def unnor_logpdf(self, trajs):
     # Output the probability of each component at each point (BxTxN)
-    diff = trajs[:, :, tf.newaxis, :] - self.means[np.newaxis, np.newaxis, ...]
-    unnor_logp = -0.5 * tf.reduce_sum((diff**2)/ self.variances, axis=-1)
+    diff = trajs[:, :, None, :] - self.means[None, None, ...]
+    unnor_logp = -0.5 * torch.sum((diff**2)/ self.variances, dim=-1)
     return unnor_logp
 
 
@@ -150,9 +162,10 @@ class HeadDirectionCellEnsemble(CellEnsemble):
                                                     soft_targets,
                                                     soft_init)
     # Create a random Von Mises with fixed cov over the position
-    rs = np.random.RandomState(seed)
-    self.means = rs.uniform(-np.pi, np.pi, (n_cells))
-    self.kappa = np.ones_like(self.means) * concentration
+    rs = torch.manual_seed(seed)
+    uni = torch.distributions.Uniform(-np.pi, np.pi)
+    self.means = uni.sample((n_cells,))
+    self.kappa = torch.ones_like(self.means) * concentration
 
   def unnor_logpdf(self, x):
-    return self.kappa * tf.cos(x - self.means[np.newaxis, np.newaxis, :])
+    return self.kappa * torch.cos(x - self.means[None, None, :])

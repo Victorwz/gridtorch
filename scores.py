@@ -15,6 +15,11 @@
 
 """Grid score calculations.
 
+
+0----------
+
+Adapted for Pytorch by Lucas Pompe, 2019
+
 """
 
 from __future__ import absolute_import

@@ -14,6 +14,12 @@
 # ==============================================================================
 
 """Helper functions for creating the training graph and plotting.
+
+
+--------
+
+Adapted for pytorch, 2019
+
 """
 
 from __future__ import absolute_import
@@ -24,10 +30,11 @@ import os
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
+import torch
 
 import ensembles  # pylint: disable=g-bad-import-order
 
+xrange=range
 
 np.seterr(invalid="ignore")
 
@@ -69,10 +76,10 @@ def encode_initial_conditions(init_pos, init_hd, place_cell_ensembles,
   initial_conds = []
   for ens in place_cell_ensembles:
     initial_conds.append(
-        tf.squeeze(ens.get_init(init_pos[:, tf.newaxis, :]), axis=1))
+        torch.squeeze(ens.get_init(init_pos[:, None, :]), dim=1))
   for ens in head_direction_ensembles:
     initial_conds.append(
-        tf.squeeze(ens.get_init(init_hd[:, tf.newaxis, :]), axis=1))
+        torch.squeeze(ens.get_init(init_hd[:, None, :]), dim=1))
   return initial_conds
 
 
@@ -88,12 +95,12 @@ def encode_targets(target_pos, target_hd, place_cell_ensembles,
 
 def clip_all_gradients(g, var, limit):
   # print(var.name)
-  return (tf.clip_by_value(g, -limit, limit), var)
+  return (torch.clamp(g, -limit, limit), var)
 
 
 def clip_bottleneck_gradient(g, var, limit):
   if ("bottleneck" in var.name or "pc_logits" in var.name):
-    return (tf.clip_by_value(g, -limit, limit), var)
+    return (torch.clamp(g, -limit, limit), var)
   else:
     return (g, var)
 
@@ -111,7 +118,7 @@ def concat_dict(acc, new_data):
     else:
       return np.asarray([kk])
 
-  for k, v in new_data.iteritems():
+  for k, v in new_data.items():
     if isinstance(v, dict):
       if k in acc:
         acc[k] = concat_dict(acc[k], v)
@@ -176,11 +183,12 @@ def get_scores_and_plot(scorer,
           title=title,
           cmap=cm)
   # Save
-  if not os.path.exists(directory):
-    os.makedirs(directory)
-  with PdfPages(os.path.join(directory, filename), "w") as f:
-    plt.savefig(f, format="pdf")
-  plt.close(fig)
+  if plot_graphs:
+      if not os.path.exists(directory):
+        os.makedirs(directory)
+      with PdfPages(os.path.join(directory, filename), "w") as f:
+        plt.savefig(f, format="pdf")
+      plt.close(fig)
   return (np.asarray(score_60), np.asarray(score_90),
           np.asarray(map(np.mean, max_60_mask)),
           np.asarray(map(np.mean, max_90_mask)))

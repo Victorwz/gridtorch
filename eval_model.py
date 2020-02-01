@@ -41,7 +41,23 @@ data_params = {'batch_size': BATCH_SIZE,
 dataset = Dataset(batch_size=data_params['batch_size'])
 data_generator = data.DataLoader(dataset, **data_params)
 
-ensembles = torch.load(SAVE_LOC + 'target_ensembles.pt')
+# Create the ensembles that provide targets during training
+place_cell_ensembles = utils.get_place_cell_ensembles(
+        env_size=ENV_SIZE,
+        neurons_seed=SEED,
+        targets_type='softmax',
+        lstm_init_type='softmax',
+        n_pc=N_PC,
+        pc_scale=[0.01])
+
+head_direction_ensembles = utils.get_head_direction_ensembles(
+        neurons_seed=SEED,
+        targets_type='softmax',
+        lstm_init_type='softmax',
+        n_hdc=N_HDC,
+        hdc_concentration=[20.])
+
+ensembles = place_cell_ensembles + head_direction_ensembles
 
 place_cell_ensembles = [ensembles[0]]
 head_direction_ensembles = [ensembles[1]]

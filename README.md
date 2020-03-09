@@ -5,5 +5,7 @@ This repo contains a pytorch implementation of the supervised half of Banino et 
 
 https://www.nature.com/articles/s41586-018-0102-6
 
-Original implementation and data can be found here:
+Original implementation and DATA can be found here:
 https://github.com/deepmind/grid-cells
+
+run convert_data.py to convert tensorflow data to pytorch format
